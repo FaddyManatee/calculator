@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "tokenize.h"
+#include "calcparser.h"
 
 
 int main(int argc, char **argv) {
@@ -12,9 +12,9 @@ int main(int argc, char **argv) {
         return 0;        
     }
 
-    if (!initLexer(argv[1])) {
+    if (!initLexer(argv[1]))
         return 1;
-    }
 
+    stopLexer();
     return 0;
 }

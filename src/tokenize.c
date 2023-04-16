@@ -210,3 +210,26 @@ int initLexer(char *input) {
 
     return 1;
 }
+
+
+void stopLexer() {
+    freeLinkedList(TOKENS);
+}
+
+
+/**
+ * Get the next token from the CLI and remove it from the stream. 
+ */
+Token* getNextToken() {
+    Token *t = TOKENS->cur->next;
+    TOKENS->cur = t;
+    return t;
+}
+
+
+/**
+ * Returns the next token in the source file without removing it from the stream.
+ */
+Token* peekNextToken() {
+    return TOKENS->cur->next;
+}
