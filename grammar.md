@@ -1,6 +1,5 @@
 # Calculator
-The grammar for the language that the calculator can parse, and the attribute
-grammar to find values of expressions.
+The grammar for the language that the calculator can parse.
 ## Grammar
 ### With left recursion
 *exp* &rarr; *exp* *addop* *term* | *term*<br/>
@@ -19,6 +18,3 @@ recursive descent parser.<br/>
 *term‴* &rarr; *mulop* *factor* *term‴* | ᶓ<br/>
 *mulop* &rarr; **\*** | **/**<br/>
 *factor* &rarr; **(** *exp* **)** | **number** | **-** **number**
-
-## Attribute grammar
-Later
