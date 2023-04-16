@@ -12,9 +12,6 @@ int main(int argc, char **argv) {
         return 0;        
     }
 
-    if (!initLexer(argv[1]))
-        return 1;
-
-    stopLexer();
+    parse(argv[1]);
     return 0;
 }

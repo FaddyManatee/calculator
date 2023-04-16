@@ -1,6 +1,6 @@
 #include "tokenize.h"
 
-// Syntax errors which my be encountered by the parser.
+// Syntax errors which may be encountered by the parser.
 typedef enum {
     NONE,
     OPERATOR,    // Expected a '+', '-', '*' or '/'.
@@ -13,5 +13,4 @@ typedef struct {
     SyntaxError  error;
 } ParserInfo;
 
-int InitParser(char *input);  // Initialise the parser to parse CLI input.
-int StopParser();             // Stop the parser and do any necessary clean up.
+void parse(char *input);  // Initialise the parser to parse CLI input.

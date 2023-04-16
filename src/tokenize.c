@@ -64,7 +64,7 @@ void freeToken(Token *t) {
 /**
  * Returns true (1) if the list is empty, false (0) otherwise. 
  */
-int isEmpty(LinkedList *list) {
+static int isEmpty(LinkedList *list) {
     if (list->size == 0 || list->start == NULL)
         return 1;
     return 0;
@@ -221,8 +221,14 @@ void stopLexer() {
  * Get the next token from the CLI and remove it from the stream. 
  */
 Token* getNextToken() {
-    Token *t = TOKENS->cur->next;
-    TOKENS->cur = t;
+    Token *t;
+
+    if (TOKENS->cur == TOKENS->start)
+        t = TOKENS->start;
+    else
+        t = TOKENS->cur;
+
+    TOKENS->cur = t->next;
     return t;
 }
 
@@ -231,5 +237,8 @@ Token* getNextToken() {
  * Returns the next token in the source file without removing it from the stream.
  */
 Token* peekNextToken() {
-    return TOKENS->cur->next;
+    if (TOKENS->cur == TOKENS->start)
+        return TOKENS->start;
+
+    return TOKENS->cur;
 }

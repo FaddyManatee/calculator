@@ -1,12 +1,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include "tokenize.h"
 #include "calcparser.h"
 
 
 typedef enum { PRESERVE, CONSUME } ParseMode;
-const char* map_SyntaxError[5]  = {
+const char* map_SyntaxError[4]  = {
     "",
     "Error: Expected a '+', '-', '*' or '/'.",
     "Error: Expected an integer.",
@@ -15,6 +14,13 @@ const char* map_SyntaxError[5]  = {
 
 
 /** EXPRESSION HANDLING */
+typedef struct Math {
+    TokenType type;
+    int priority;
+    const char *str;
+} Math;
+
+
 typedef struct Stack {
     Math **data;
     Math *top;  // Pointer to the next free element of the stack.
@@ -29,7 +35,7 @@ typedef struct Stack {
 Stack* newStack(int maxSize) {
     Stack *stack = (Stack *) malloc(sizeof(Stack));
     stack->data = (Math **) calloc(maxSize, sizeof(Math *));
-    stack->top = stack->data;
+    stack->top = stack->data[0];
     stack->max = maxSize;
     stack->size = 0;
 
@@ -43,6 +49,26 @@ Stack* newStack(int maxSize) {
 void freeStack(Stack *stack) {
     free(stack->data);
     free(stack);
+}
+
+
+/**
+ * Returns true (1) if the stack is full, false (0) otherwise. 
+ */
+int isFull(Stack *stack) {
+    if (stack->top - 1 == stack->data[stack->max - 1])
+        return 1;
+    return 0;
+}
+
+
+/**
+ * Returns true (1) if the stack is empty, false (0) otherwise. 
+ */
+static int isEmpty(Stack *stack) {
+    if (stack->top == stack->data[0])
+        return 1;
+    return 0;
 }
 
 
@@ -84,26 +110,6 @@ Math* peek(Stack *stack) {
 
 
 /**
- * Returns true (1) if the stack is full, false (0) otherwise. 
- */
-int isFull(Stack *stack) {
-    if (stack->top - 1 == stack->data + stack->max - 1)
-        return 1;
-    return 0;
-}
-
-
-/**
- * Returns true (1) if the stack is empty, false (0) otherwise. 
- */
-int isEmpty(Stack *stack) {
-    if (stack->top == stack->data)
-        return 1;
-    return 0;
-}
-
-
-/**
  * Prints the stack. 
  */
 void printStack(Stack *stack) {
@@ -121,13 +127,6 @@ void printStack(Stack *stack) {
     }
     printf("-----Stack Bottom-----\n\n");
 }
-
-
-typedef struct Math {
-    TokenType type;
-    int priority;
-    const char *str;
-} Math;
 
 
 typedef struct Expression {
@@ -172,7 +171,8 @@ int eval(Expression *e) {
 
 
 /** START PROTOTYPES */
-void parseExpr();  // Start symbol
+void parse(char *str);
+ParserInfo parseExpr();  // Start symbol
 ParserInfo r_parseExpr(Expression *e);
 ParserInfo parseAdd(Expression *e);
 ParserInfo parseTerm(Expression *e);
@@ -194,59 +194,66 @@ void checkFor(SyntaxError error, ParserInfo *info, ParseMode mode) {
     }
     info->error = NONE;
 
+    if (info->token == NULL || info->token->code == EOS) {
+        info->error = error;
+        return;
+    }
+
     switch (error) {
         case NONE:
             return;
 
         case OPERAND:
             if (info->token->type != INTEGER)
-                info->error = OPERAND;
+                info->error = error;
             break;
 
         case OPERATOR:
-            if (!(strcmp(info->token->lexeme, SYMBOLS[PLUS]) ||
-                  strcmp(info->token->lexeme, SYMBOLS[MINUS]) ||
-                  strcmp(info->token->lexeme, SYMBOLS[MULT]) ||
-                  strcmp(info->token->lexeme, SYMBOLS[DIV])))
+            if (!(strcmp(info->token->lexeme, "+") == 0 ||
+                  strcmp(info->token->lexeme, "-") == 0 ||
+                  strcmp(info->token->lexeme, "*") == 0 ||
+                  strcmp(info->token->lexeme, "/") == 0))
             {
-                info->error = OPERATOR;
+                info->error = error;
             }
             break;
 
         case PAREN_CLOSE:
-            if (!strcmp(info->token->lexeme, SYMBOLS[CLOSE]))
-                info->error = PAREN_CLOSE;
+            if (!(strcmp(info->token->lexeme, ")")) == 0)
+                info->error = error;
             break;
     }
 }
 
 
-void parseExpr() {
+ParserInfo parseExpr(Expression *e) {
     ParserInfo info = {.error = NONE};
-    Expression *expr = newExpression();
 
-    info = parseTerm(expr);
+    info = parseTerm(e);
     if (info.error != NONE)
         return info;
 
-    info = r_parseExpr(expr);
-    if (info.error != NONE)
-        printf("%s\n", map_SyntaxError[info.error]);
-    
-    shuntingYard(expr);  // Infix -> Postfix (RPN)
-    printf("= %d", eval(expr));
+    info = r_parseExpr(e);
+    return info;
 }
 
 
 ParserInfo r_parseExpr(Expression *e) {
     ParserInfo info = {.error = NONE};
+    Token *t = peekNextToken();
 
-    if (peekNextToken()->code == EOS)
+    // Empty string.
+    if (t == NULL || 
+        t->type == EOS ||
+        strcmp(t->lexeme, ")") == 0 ||
+            (strcmp(t->lexeme, "+") != 0 &&
+             strcmp(t->lexeme, "-") != 0))
+    {
         return info;
+    }
 
-    info = parseAdd(e);
-    if (info.error != NONE)
-        return info;
+    addMath(e, SYMBOL, 4, t->lexeme);
+    getNextToken();
 
     info = parseTerm(e);
     if (info.error != NONE)
@@ -264,15 +271,53 @@ ParserInfo parseAdd(Expression *e) {
     if (info.error != NONE)
         return info;
 
-    if (strcmp(info.token->lexeme, SYMBOLS[PLUS])) {
-        addMath(e, SYMBOL, 4, SYMBOLS[PLUS]);
+    if (strcmp(info.token->lexeme, "+") == 0) {
+        addMath(e, SYMBOL, 4, "+");
     }
-    else if (strcmp(info.token->lexeme, SYMBOLS[MINUS])) {
-        addMath(e, SYMBOL, 4, SYMBOLS[MINUS]);
+    else if (strcmp(info.token->lexeme, "-") == 0) {
+        addMath(e, SYMBOL, 4, "-");
     }
     else
         info.error = OPERATOR;
 
+    return info;
+}
+
+
+ParserInfo parseTerm(Expression *e) {
+    ParserInfo info = {.error = NONE};
+
+    info = parseFactor(e);
+    if (info.error != NONE)
+        return info;
+
+    info = r_parseTerm(e);
+    return info;
+}
+
+
+ParserInfo r_parseTerm(Expression *e) {
+    ParserInfo info = {.error = NONE};
+    Token *t = peekNextToken();
+
+    // Empty string.
+    if (t == NULL || 
+        t->type == EOS ||
+        strcmp(t->lexeme, ")") == 0 ||
+            (strcmp(t->lexeme, "*") != 0 &&
+             strcmp(t->lexeme, "/") != 0))
+    {
+        return info;
+    }
+
+    addMath(e, SYMBOL, 3, t->lexeme);
+    getNextToken();
+
+    info = parseFactor(e);
+    if (info.error != NONE)
+        return info;
+    
+    info = r_parseTerm(e);
     return info;
 }
 
@@ -284,11 +329,11 @@ ParserInfo parseMult(Expression *e) {
     if (info.error != NONE)
         return info;
 
-    if (strcmp(info.token->lexeme, SYMBOLS[MULT])) {
-        addMath(e, SYMBOL, 3, SYMBOLS[MULT]);
+    if (strcmp(info.token->lexeme, "*") == 0) {
+        addMath(e, SYMBOL, 3, "*");
     }
-    else if (strcmp(info.token->lexeme, SYMBOLS[DIV])) {
-        addMath(e, SYMBOL, 3, SYMBOLS[DIV]);
+    else if (strcmp(info.token->lexeme, "/") == 0) {
+        addMath(e, SYMBOL, 3, "/");
     }
     else
         info.error = OPERATOR;
@@ -300,23 +345,20 @@ ParserInfo parseMult(Expression *e) {
 ParserInfo parseFactor(Expression *e) {
     ParserInfo info = {.error = NONE};
 
-    if (strcmp(peekNextToken()->lexeme, "(")) {
-        addMath(e, SYMBOL, 1, SYMBOLS[OPEN]);
+    if (strcmp(peekNextToken()->lexeme, "(") == 0) {
+        addMath(e, SYMBOL, 1, "(");
         
         getNextToken();
-        checkFor(OPERAND, &info, CONSUME);
-        if (info.error == NONE) {
-            addMath(e, INTEGER, 0, info.token->lexeme);
-        }
-        else
+        info = parseExpr(e);
+        if (info.error != NONE)
             return info;
 
         checkFor(PAREN_CLOSE, &info, CONSUME);
         if (info.error == NONE)
-            addMath(e, SYMBOL, 1, SYMBOLS[CLOSE]);
+            addMath(e, SYMBOL, 1, ")");
     }
-    else if (strcmp(peekNextToken()->lexeme, "-")) {
-        addMath(e, SYMBOL, 2, SYMBOLS[MINUS]);  // Unary
+    else if (strcmp(peekNextToken()->lexeme, "-") == 0) {
+        addMath(e, SYMBOL, 2, "-");  // Unary
         
         getNextToken();
         checkFor(OPERAND, &info, CONSUME);
@@ -328,6 +370,25 @@ ParserInfo parseFactor(Expression *e) {
         if (info.error == NONE)
             addMath(e, INTEGER, 0, info.token->lexeme);
     }
-
     return info;
+}
+
+
+void parse(char *str) {
+    if (!initLexer(str)) {
+        printf("Error: Lexer failed.\n");
+        stopLexer();
+        return;
+    }
+
+    Expression *expr = newExpression();
+    ParserInfo info = parseExpr(expr);
+    if (info.error != NONE) {
+        printf("%s\n", map_SyntaxError[info.error]);
+        return;
+    }
+
+    shuntingYard(expr);  // Infix -> Postfix (RPN)
+    int result = eval(expr);
+    stopLexer();
 }
