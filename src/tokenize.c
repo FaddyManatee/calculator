@@ -195,7 +195,7 @@ int initLexer(char *input) {
 
     do {
         Token *t = tokenize(input + len);
-        printToken(t);
+        //printToken(t);
         insertEnd(TOKENS, t);
 
         if (t->code == ILLEGAL_SYMBOL) {

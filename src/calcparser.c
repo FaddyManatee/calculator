@@ -7,7 +7,7 @@
 typedef enum { PRESERVE, CONSUME } ParseMode;
 const char* map_SyntaxError[4]  = {
     "",
-    "Error: Expected a '+', '-', '*' or '/'.",
+    "Error: Expected an operator next to parentheses.",
     "Error: Expected an integer.",
     "Error: Unbalanced parentheses."
 };
@@ -174,10 +174,8 @@ int eval(Expression *e) {
 void parse(char *str);
 ParserInfo parseExpr();  // Start symbol
 ParserInfo r_parseExpr(Expression *e);
-ParserInfo parseAdd(Expression *e);
 ParserInfo parseTerm(Expression *e);
 ParserInfo r_parseTerm(Expression *e);
-ParserInfo parseMult(Expression *e);
 ParserInfo parseFactor(Expression *e);
 /** END PROTOTYPES */
 
@@ -208,16 +206,6 @@ void checkFor(SyntaxError error, ParserInfo *info, ParseMode mode) {
                 info->error = error;
             break;
 
-        case OPERATOR:
-            if (!(strcmp(info->token->lexeme, "+") == 0 ||
-                  strcmp(info->token->lexeme, "-") == 0 ||
-                  strcmp(info->token->lexeme, "*") == 0 ||
-                  strcmp(info->token->lexeme, "/") == 0))
-            {
-                info->error = error;
-            }
-            break;
-
         case PAREN_CLOSE:
             if (!(strcmp(info->token->lexeme, ")")) == 0)
                 info->error = error;
@@ -234,6 +222,9 @@ ParserInfo parseExpr(Expression *e) {
         return info;
 
     info = r_parseExpr(e);
+    if (info.error != NONE)
+        return info;
+
     return info;
 }
 
@@ -242,44 +233,28 @@ ParserInfo r_parseExpr(Expression *e) {
     ParserInfo info = {.error = NONE};
     Token *t = peekNextToken();
 
-    // Empty string.
-    if (t == NULL || 
-        t->type == EOS ||
-        strcmp(t->lexeme, ")") == 0 ||
-            (strcmp(t->lexeme, "+") != 0 &&
-             strcmp(t->lexeme, "-") != 0))
+    if (t == NULL || t->type == EOS)
+        return info;
+
+    if (strcmp(t->lexeme, "+") == 0|| strcmp(t->lexeme, "-") == 0) {
+        addMath(e, SYMBOL, 4, t->lexeme);
+        getNextToken();
+
+        info = parseTerm(e);
+        if (info.error != NONE)
+            return info;
+        
+        info = r_parseExpr(e);
+        return info;
+    }
+    else if (strcmp(t->lexeme, "*") == 0 ||
+             strcmp(t->lexeme, "/") == 0 ||
+             strcmp(t->lexeme, ")") == 0)
     {
         return info;
     }
 
-    addMath(e, SYMBOL, 4, t->lexeme);
-    getNextToken();
-
-    info = parseTerm(e);
-    if (info.error != NONE)
-        return info;
-
-    info = r_parseExpr(e);
-    return info;
-}
-
-
-ParserInfo parseAdd(Expression *e) {
-    ParserInfo info = {.error = NONE};
-
-    checkFor(OPERATOR, &info, CONSUME);
-    if (info.error != NONE)
-        return info;
-
-    if (strcmp(info.token->lexeme, "+") == 0) {
-        addMath(e, SYMBOL, 4, "+");
-    }
-    else if (strcmp(info.token->lexeme, "-") == 0) {
-        addMath(e, SYMBOL, 4, "-");
-    }
-    else
-        info.error = OPERATOR;
-
+    info.error = OPERATOR;
     return info;
 }
 
@@ -300,44 +275,28 @@ ParserInfo r_parseTerm(Expression *e) {
     ParserInfo info = {.error = NONE};
     Token *t = peekNextToken();
 
-    // Empty string.
-    if (t == NULL || 
-        t->type == EOS ||
-        strcmp(t->lexeme, ")") == 0 ||
-            (strcmp(t->lexeme, "*") != 0 &&
-             strcmp(t->lexeme, "/") != 0))
+    if (t == NULL || t->type == EOS)
+        return info;
+
+    if (strcmp(t->lexeme, "*") == 0 || strcmp(t->lexeme, "/") == 0) {
+        addMath(e, SYMBOL, 3, t->lexeme);
+        getNextToken();
+
+        info = parseFactor(e);
+        if (info.error != NONE)
+            return info;
+        
+        info = r_parseTerm(e);
+        return info;
+    }
+    else if (strcmp(t->lexeme, "+") == 0 ||
+             strcmp(t->lexeme, "-") == 0 ||
+             strcmp(t->lexeme, ")") == 0)
     {
         return info;
     }
 
-    addMath(e, SYMBOL, 3, t->lexeme);
-    getNextToken();
-
-    info = parseFactor(e);
-    if (info.error != NONE)
-        return info;
-    
-    info = r_parseTerm(e);
-    return info;
-}
-
-
-ParserInfo parseMult(Expression *e) {
-    ParserInfo info = {.error = NONE};
-
-    checkFor(OPERATOR, &info, CONSUME);
-    if (info.error != NONE)
-        return info;
-
-    if (strcmp(info.token->lexeme, "*") == 0) {
-        addMath(e, SYMBOL, 3, "*");
-    }
-    else if (strcmp(info.token->lexeme, "/") == 0) {
-        addMath(e, SYMBOL, 3, "/");
-    }
-    else
-        info.error = OPERATOR;
-
+    info.error = OPERATOR;
     return info;
 }
 
@@ -376,13 +335,20 @@ ParserInfo parseFactor(Expression *e) {
 
 void parse(char *str) {
     if (!initLexer(str)) {
-        printf("Error: Lexer failed.\n");
         stopLexer();
         return;
     }
 
     Expression *expr = newExpression();
     ParserInfo info = parseExpr(expr);
+
+    // Check for any extra/illegal parentheses outside of an expression.
+    if (peekNextToken() != NULL &&
+        strcmp(peekNextToken()->lexeme, ")") == 0)
+    {
+        info.error = PAREN_CLOSE;
+    }
+
     if (info.error != NONE) {
         printf("%s\n", map_SyntaxError[info.error]);
         return;

@@ -3,7 +3,7 @@
 // Syntax errors which may be encountered by the parser.
 typedef enum {
     NONE,
-    OPERATOR,    // Expected a '+', '-', '*' or '/'.
+    OPERATOR,    // Expected an operator next to parentheses.
     OPERAND,     // Expected an integer.
     PAREN_CLOSE  // ) expected.
 } SyntaxError;
