@@ -7,15 +7,18 @@
 typedef enum { PRESERVE, CONSUME } ParseMode;
 const char* map_SyntaxError[4]  = {
     "",
-    "Error: Expected an operator next to parentheses.",
+    "Error: Expected an operator next to a parenthesis.",
     "Error: Expected an integer.",
     "Error: Unbalanced parentheses."
 };
 
 
 /** EXPRESSION HANDLING */
+typedef enum { LEFT, RIGHT } Associative;
+
 typedef struct Math {
     TokenType type;
+    Associative assoc;  // Left or right associative? 
     int priority;
     const char *str;
 } Math;
@@ -23,9 +26,9 @@ typedef struct Math {
 
 typedef struct Stack {
     Math **data;
-    Math *top;  // Pointer to the next free element of the stack.
-    int size;
-    int max;   // Maximum stack size.
+    Math  *top;  // Pointer to the next free element of the stack.
+    int    size;
+    int    max;   // Maximum stack size.
 } Stack;
 
 
@@ -55,7 +58,7 @@ void freeStack(Stack *stack) {
 /**
  * Returns true (1) if the stack is full, false (0) otherwise. 
  */
-int isFull(Stack *stack) {
+static int isFull(Stack *stack) {
     if (stack->top - 1 == stack->data[stack->max - 1])
         return 1;
     return 0;
@@ -66,7 +69,7 @@ int isFull(Stack *stack) {
  * Returns true (1) if the stack is empty, false (0) otherwise. 
  */
 static int isEmpty(Stack *stack) {
-    if (stack->top == stack->data[0])
+    if (stack->size == 0)
         return 1;
     return 0;
 }
@@ -130,35 +133,99 @@ void printStack(Stack *stack) {
 
 
 typedef struct Expression {
-    Math expr[50];  // Static for now.
-    int cur;
+    Math *expr[128];  // Static for now.
+    Math *end;
+    int size;
 } Expression;
 
 
 Expression *newExpression() {
     Expression *e = (Expression *) malloc(sizeof(Expression));
-    e->cur = 0;
+    e->end = e->expr[0];
+    e->size = 0;
 
     return e;
 }
 
 
 void freeExpression(Expression *e) {
+    int x;
+    for (x = 0; x < e->size; x++)
+        free(e->expr[x]);
     free(e);
 }
 
 
-void addMath(Expression *e, TokenType type, int priority, char *str) {
-    e->expr[e->cur++] = (Math) {type, priority, str};
+void addMath(Expression *e, TokenType type, Associative a, int priority, char *str) {
+    Math *new = (Math *) malloc(sizeof(Math));
+    new->type = type;
+    new->assoc = a;
+    new->priority = priority;
+    new->str = str;
+    e->expr[e->size++] = new; 
+    e->end++;
 }
 /** EXPRESSION HANDLING */
 
 
 /**
- * Converts infix expression 'e' to postfix. 
+ * Converts infix expression 'e' to postfix.
+ * URL: https://en.wikipedia.org/wiki/Shunting_yard_algorithm
+ * 
+ * The recursive descent parser ensured balanced parentheses.
  */
 void shuntingYard(Expression *e) {
+    Stack *operator = newStack(e->size);
+    Math **output = (Math **) calloc(e->size, sizeof(Math *));
+    int curExpr = 0;
+    int curOut = 0;
 
+    while ((e->expr[curExpr])->str != NULL) {
+        Math *m = e->expr[curExpr];
+
+        // A left parenthesis.
+        if (strcmp(m->str, "(") == 0) {
+            push(operator, m);
+        }
+
+        // A right parenthesis.
+        else if (strcmp(m->str, ")") == 0) {
+            while (strcmp(peek(operator)->str, "(") != 0) {
+                output[curOut++] = pop(operator);
+
+                if (strcmp(peek(operator)->str, "(") == 0)
+                    pop(operator);
+            }
+        }
+        // A number.
+        else if (m->type == INTEGER)
+            output[curOut++] = m;
+
+        // A operator.
+        else if (m->type == SYMBOL) {
+            while (!isEmpty(operator)) {
+                Math *p = peek(operator);
+                if (strcmp(p->str, "(") != 0 &&
+                        (p->priority < m->priority ||
+                            (m->priority == p->priority && m->assoc == LEFT)))
+                {
+                    output[curOut++] = pop(operator);
+                }
+                else
+                    break;
+            }
+            push(operator, m);
+        }
+        curExpr++;
+    }
+
+    while (!isEmpty(operator)) {
+        output[curOut++] = pop(operator);
+    }
+
+    memcpy(e->expr, output, sizeof(Math **) * e->size);
+    freeStack(operator);
+    free(output);
 }
 
 
@@ -237,7 +304,7 @@ ParserInfo r_parseExpr(Expression *e) {
         return info;
 
     if (strcmp(t->lexeme, "+") == 0|| strcmp(t->lexeme, "-") == 0) {
-        addMath(e, SYMBOL, 4, t->lexeme);
+        addMath(e, SYMBOL, LEFT, 4, t->lexeme);
         getNextToken();
 
         info = parseTerm(e);
@@ -279,7 +346,7 @@ ParserInfo r_parseTerm(Expression *e) {
         return info;
 
     if (strcmp(t->lexeme, "*") == 0 || strcmp(t->lexeme, "/") == 0) {
-        addMath(e, SYMBOL, 3, t->lexeme);
+        addMath(e, SYMBOL, LEFT, 3, t->lexeme);
         getNextToken();
 
         info = parseFactor(e);
@@ -305,7 +372,7 @@ ParserInfo parseFactor(Expression *e) {
     ParserInfo info = {.error = NONE};
 
     if (strcmp(peekNextToken()->lexeme, "(") == 0) {
-        addMath(e, SYMBOL, 1, "(");
+        addMath(e, SYMBOL, LEFT, 1, "(");
         
         getNextToken();
         info = parseExpr(e);
@@ -314,20 +381,20 @@ ParserInfo parseFactor(Expression *e) {
 
         checkFor(PAREN_CLOSE, &info, CONSUME);
         if (info.error == NONE)
-            addMath(e, SYMBOL, 1, ")");
+            addMath(e, SYMBOL, LEFT, 1, ")");
     }
     else if (strcmp(peekNextToken()->lexeme, "-") == 0) {
-        addMath(e, SYMBOL, 2, "-");  // Unary
+        addMath(e, SYMBOL, RIGHT, 2, "-");  // Unary minus.
         
         getNextToken();
         checkFor(OPERAND, &info, CONSUME);
         if (info.error == NONE)
-            addMath(e, INTEGER, 0, info.token->lexeme);
+            addMath(e, INTEGER, LEFT, 0, info.token->lexeme);
     }
     else {
         checkFor(OPERAND, &info, CONSUME);
         if (info.error == NONE)
-            addMath(e, INTEGER, 0, info.token->lexeme);
+            addMath(e, INTEGER, LEFT, 0, info.token->lexeme);
     }
     return info;
 }
