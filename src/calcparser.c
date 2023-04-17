@@ -20,7 +20,7 @@ typedef struct Math {
     TokenType type;
     Associative assoc;  // Left or right associative? 
     int priority;
-    const char *str;
+    char *str;
     struct Math *next;
 } Math;
 
@@ -33,9 +33,6 @@ typedef struct Expression {
 } Expression;
 
 
-/**
- * Creates a new list. Remember to free its resources when no longer needed.
- */
 Expression* newExpression() {
     Expression *expr = (Expression *) malloc(sizeof(Expression));
     expr->start = NULL;
@@ -59,6 +56,13 @@ Math* newMath(TokenType t, Associative a, int p, char *s) {
 }
 
 
+int exprEmpty(Expression *e) {
+    if (e->size == 0 || e->start == NULL)
+        return 1;
+    return 0;
+}
+
+
 void freeMath(Math *m) {
     // Free the node itself and any of its members allocated memory.
     free(m);
@@ -66,7 +70,7 @@ void freeMath(Math *m) {
 
 
 void freeExpression(Expression *e) {
-    if (isEmpty(e)) {
+    if (exprEmpty(e)) {
         free(e);
         return;
     }
@@ -122,13 +126,6 @@ Math* getNextMath(Expression *e) {
 }
 
 
-int exprEmpty(Expression *e) {
-    if (e->size == 0 || e->start == NULL)
-        return 1;
-    return 0;
-}
-
-
 /**
  * Prints the expression.
  */
@@ -157,17 +154,154 @@ void printExpr(Expression *e) {
     printf("Start:        %p\n",   e->start);
     printf("End:          %p\n\n", e->end);
 }
+
+
+typedef struct Stack {
+    Math **data;
+    Math  *top;   // Pointer to the next free element of the stack.
+    int    size;
+    int    max;   // Maximum stack size.
+} Stack;
+
+
+Stack* newStack(int maxSize) {
+    Stack *stack = (Stack *) malloc(sizeof(Stack));
+    stack->data = (Math **) malloc(sizeof(Math *));
+
+    int x;
+    for (x = 0; x < maxSize; x++)
+        stack->data[x] = (Math *) calloc(1, sizeof(Math));
+
+    stack->top = stack->data[0];
+    stack->max = maxSize;
+    stack->size = 0;
+
+    return stack;
+}
+
+
+void freeStack(Stack *stack) {
+    int x;
+    for (x = 0; x < stack->max; x++)
+        free(stack->data[x]);
+
+    free(stack->data);
+    free(stack);
+}
+
+
+static int isFull(Stack *stack) {
+    if (stack->top - 1 == stack->data[stack->max - 1])
+        return 1;
+    return 0;
+}
+
+
+static int isEmpty(Stack *stack) {
+    if (stack->top == stack->data[0])
+        return 1;
+    return 0;
+}
+
+
+void push(Stack *stack, Math data) {
+    if (isFull(stack))
+        return;
+
+    *(stack->top++) = data;
+    stack->size++;
+}
+
+
+Math* pop(Stack *stack) {
+    if (isEmpty(stack))
+        return NULL;
+
+    Math *element = --stack->top;
+    stack->size--;
+
+    return element;
+}
+
+
+Math* peek(Stack *stack) {
+    return stack->top - 1;
+}
+
+
+void printStack(Stack *stack) {
+    if (isEmpty(stack)) {
+        printf("----------------------\n");
+        printf("The stack is empty\n");
+        printf("----------------------\n\n");
+        return;
+    }
+
+    int x;
+    printf("------Stack Top------\n");
+    for (x = stack->size - 1; x >= 0; x--) {
+        printf("%d\n", stack->data[x]->str);
+    }
+    printf("-----Stack Bottom-----\n\n");
+}
 /** EXPRESSION HANDLING */
 
 
 /**
- * Converts infix expression 'e' to postfix.
+ * Returns a postfix conversion of infix expression 'e'.
  * URL: https://en.wikipedia.org/wiki/Shunting_yard_algorithm
  * 
  * The recursive descent parser ensured balanced parentheses.
  */
-void shunt(Expression *e) {
+Expression* shunt(Expression *e) {
+    Stack *operator = newStack(e->size);
+    Expression *out = newExpression();
+    Math *o1 = getNextMath(e);
+    
+    while (o1 != NULL) {
+        // If a number:
+        if (o1->type == INTEGER)
+            addMath(out, o1->type, o1->assoc, o1->priority, o1->str);
 
+        // If a left parenthesis:
+        else if (strcmp(o1->str, "(") == 0)
+            push(operator, *o1);
+        
+        // If a right parenthesis:
+        else if (strcmp(o1->str, ")") == 0) {
+            while (!strcmp(peek(operator)->str, "(")) {
+                Math *m = pop(operator);
+                addMath(out, m->type, m->assoc, m->priority, m->str);
+            }
+        }
+
+        // If an operator:
+        else if (o1->type = SYMBOL) {
+            while (!isEmpty(operator)) {
+                Math *o2 = peek(operator);
+
+                if (strcmp(o2->str, "(") != 0 &&
+                    (o2->priority < o1->priority ||
+                        (o1->priority == o2->priority && o1->assoc == LEFT)))
+                {
+                    Math *m = pop(operator);
+                    addMath(out, m->type, m->assoc, m->priority, m->str);
+                }
+                else
+                    break;
+                push(operator, *o1);
+            }
+        }
+        o1 = getNextMath(e);
+    }
+
+    while (!isEmpty(operator)) {
+        Math *m = pop(operator);
+        addMath(out, m->type, m->assoc, m->priority, m->str);
+    }
+
+    freeExpression(e);
+    return out;
 }
 
 
