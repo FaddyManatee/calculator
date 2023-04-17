@@ -21,165 +21,141 @@ typedef struct Math {
     Associative assoc;  // Left or right associative? 
     int priority;
     const char *str;
+    struct Math *next;
 } Math;
 
 
-typedef struct Stack {
-    Math **data;
-    Math  *top;  // Pointer to the next free element of the stack.
-    int    size;
-    int    max;   // Maximum stack size.
-} Stack;
-
-
-/**
- * Creates a new stack. Remember to free its resources when no longer needed.
- */
-Stack* newStack(int maxSize) {
-    Stack *stack = (Stack *) malloc(sizeof(Stack));
-    stack->data = (Math **) calloc(maxSize, sizeof(Math *));
-
-    int x;
-    for (x = 0; x < maxSize; x++)
-        stack->data[x] = (Math *) calloc(1, sizeof(Math));
-
-    stack->top = stack->data[0];
-    stack->max = maxSize;
-    stack->size = 0;
-
-    return stack;
-}
-
-
-/**
- * Frees all memory dynamically allocated to the stack. 
- */
-void freeStack(Stack *stack) {
-    int x;
-    for (x = 0; x < stack->max; x++)
-        free(stack->data[x]);
-    
-    free(stack->data);
-    free(stack);
-}
-
-
-/**
- * Returns true (1) if the stack is full, false (0) otherwise. 
- */
-static int isFull(Stack *stack) {
-    if (stack->top - 1 == stack->data[stack->max - 1])
-        return 1;
-    return 0;
-}
-
-
-/**
- * Returns true (1) if the stack is empty, false (0) otherwise. 
- */
-static int isEmpty(Stack *stack) {
-    if (stack->size == 0)
-        return 1;
-    return 0;
-}
-
-
-/**
- * Push (add) 'data' onto the top of the stack.
- * Returns if the operation would cause a stack overflow.
- */
-void push(Stack *stack, Math *data) {
-    if (isFull(stack))
-        return;
-
-    stack->top = data;
-    stack->top++;
-    stack->size++;
-}
-
-
-/**
- * Pop (remove) an element from the top of the stack.
- * Returns 0 if the operation would cause a stack underflow.
- */
-Math* pop(Stack *stack) {
-    if (isEmpty(stack))
-        return 0;
-
-    Math *element = --stack->top;
-    stack->size--;
-
-    return element;
-}
-
-
-/**
- * Peek (inspect) the top element of the stack. 
- */
-Math* peek(Stack *stack) {
-    return stack->top - 1;
-}
-
-
-/**
- * Prints the stack. 
- */
-void printStack(Stack *stack) {
-    if (isEmpty(stack)) {
-        printf("----------------------\n");
-        printf("The stack is empty\n");
-        printf("----------------------\n\n");
-        return;
-    }
-
-    int x;
-    printf("------Stack Top------\n");
-    for (x = stack->size - 1; x >= 0; x--) {
-        printf("%s\n", *(stack->data[x])->str);
-    }
-    printf("-----Stack Bottom-----\n\n");
-}
-
-
 typedef struct Expression {
-    Math **expr;  // Static for now.
-    Math **end;
-    int    size;
+    Math *start; // Pointer to head of list.
+    Math *end;   // Pointer to end of list.
+    Math *cur;
+    int   size;  // List size (number of nodes).
 } Expression;
 
 
-Expression *newExpression(int size) {
-    Expression *e = (Expression *) malloc(sizeof(Expression));
-    e->expr = (Math **) malloc(sizeof(Math *) * size);
+/**
+ * Creates a new list. Remember to free its resources when no longer needed.
+ */
+Expression* newExpression() {
+    Expression *expr = (Expression *) malloc(sizeof(Expression));
+    expr->start = NULL;
+    expr->end = NULL;
+    expr->cur = NULL;
+    expr->size = 0;
 
-    int x;
-    for (x = 0; x < size; x++)
-        e->expr[x] = (Math *) calloc(1, sizeof(Math));
+    return expr;
+}
 
-    e->end = e->expr;
-    e->size = size;
 
-    return e;
+Math* newMath(TokenType t, Associative a, int p, char *s) {
+    Math *m = (Math *) malloc(sizeof(Math));
+    m->type = t;
+    m->assoc = a;
+    m->priority = p;
+    m->str = s;
+    m->next = NULL;
+
+    return m;
+}
+
+
+void freeMath(Math *m) {
+    // Free the node itself and any of its members allocated memory.
+    free(m);
 }
 
 
 void freeExpression(Expression *e) {
-    int x;
-    for (x = 0; x < e->size; x++)
-        free(e->expr[x]);
+    if (isEmpty(e)) {
+        free(e);
+        return;
+    }
 
-    free(e->expr);
+    Math *iterator = e->start;
+    Math *next;
+
+    while (1) {
+        next = iterator->next;
+        freeMath(iterator);
+
+        if (next == NULL)
+            break;
+        iterator = next;
+    }
     free(e);
 }
 
 
-void addMath(Expression *e, TokenType type, Associative a, int priority, char *str) {
-    Math *new = *(e->end++);
-    new->type = type;
-    new->assoc = a;
-    new->priority = priority;
-    new->str = str;
+void addMath(Expression *e, TokenType t, Associative a, int priority, char *str) {
+    Math *new = newMath(t, a, priority, str);
+
+    if (e->start != NULL) {
+        // Adding math to a non-empty expression.
+        Math *end = e->end;
+        end->next = new;
+        new->next = NULL;
+        e->end = new;
+    }
+    else {
+        // Adding math to an empty expression.
+        e->start = new;
+        e->end = new;
+        e->cur = new;
+        new->next = NULL;
+    }
+
+    // Increase list size, we have added a token.
     e->size++;
+}
+
+
+Math* getNextMath(Expression *e) {
+    Math *m;
+
+    if (e->cur == e->start)
+        m = e->start;
+    else
+        m = e->cur;
+
+    e->cur = m->next;
+    return m;
+}
+
+
+int exprEmpty(Expression *e) {
+    if (e->size == 0 || e->start == NULL)
+        return 1;
+    return 0;
+}
+
+
+/**
+ * Prints the expression.
+ */
+void printExpr(Expression *e) {
+    if (exprEmpty(e)) {
+        printf("----------------------\n");
+        printf("The expression is empty\n");
+        printf("----------------------\n\n");
+        return;
+    }
+    
+    Math *iterator = e->start;
+    while (1) {
+        printf("----------------------\n");
+        printf("address:  %p\n", iterator);
+        printf("data:     %d\n", iterator->str);
+        printf("next:     %p\n", iterator->next);
+        printf("----------------------\n\n");
+
+        if (iterator->next == NULL)
+            break;
+        iterator = iterator->next;
+    }
+
+    printf("Size of list: %d\n",   e->size);
+    printf("Start:        %p\n",   e->start);
+    printf("End:          %p\n\n", e->end);
 }
 /** EXPRESSION HANDLING */
 
@@ -191,56 +167,7 @@ void addMath(Expression *e, TokenType type, Associative a, int priority, char *s
  * The recursive descent parser ensured balanced parentheses.
  */
 void shunt(Expression *e) {
-    Math *output[e->size];
-    Stack *operator = newStack(e->size);
-    int curExpr = 0;
-    int curOut = 0;
 
-    while (e->expr[curExpr] != NULL) {
-        Math *m = e->expr[curExpr];
-
-        // A left parenthesis.
-        if (strcmp(m->str, "(") == 0) {
-            push(operator, m);
-        }
-
-        // A right parenthesis.
-        else if (strcmp(m->str, ")") == 0) {
-            while (strcmp(peek(operator)->str, "(") != 0) {
-                output[curOut++] = pop(operator);
-
-                if (strcmp(peek(operator)->str, "(") == 0)
-                    pop(operator);
-            }
-        }
-        // A number.
-        else if (m->type == INTEGER)
-            output[curOut++] = m;
-
-        // A operator.
-        else if (m->type == SYMBOL) {
-            while (!isEmpty(operator)) {
-                Math *p = peek(operator);
-                if (strcmp(p->str, "(") != 0 &&
-                        (p->priority < m->priority ||
-                            (m->priority == p->priority && m->assoc == LEFT)))
-                {
-                    output[curOut++] = pop(operator);
-                }
-                else
-                    break;
-            }
-            push(operator, m);
-        }
-        curExpr++;
-    }
-
-    while (!isEmpty(operator)) {
-        output[curOut++] = pop(operator);
-    }
-
-    memcpy(e->expr, output, sizeof(Math **) * e->size);
-    freeStack(operator);
 }
 
 
