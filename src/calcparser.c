@@ -20,7 +20,7 @@ typedef struct Math {
     TokenType type;
     Associative assoc;  // Left or right associative? 
     int priority;
-    char *str;
+    int value;  // Cast to char if type == SYMBOL.
     struct Math *next;
 } Math;
 
@@ -44,12 +44,12 @@ Expression* newExpression() {
 }
 
 
-Math* newMath(TokenType t, Associative a, int p, char *s) {
+Math* newMath(TokenType t, Associative a, int p, int v) {
     Math *m = (Math *) malloc(sizeof(Math));
     m->type = t;
     m->assoc = a;
     m->priority = p;
-    m->str = s;
+    m->value = v;
     m->next = NULL;
 
     return m;
@@ -90,8 +90,8 @@ void freeExpression(Expression *e) {
 }
 
 
-void addMath(Expression *e, TokenType t, Associative a, int priority, char *str) {
-    Math *new = newMath(t, a, priority, str);
+void addMath(Expression *e, TokenType t, Associative a, int priority, int v) {
+    Math *new = newMath(t, a, priority, v);
 
     if (e->start != NULL) {
         // Adding math to a non-empty expression.
@@ -144,7 +144,10 @@ void printExpr(Expression *e) {
     while (1) {
         printf("----------------------\n");
         printf("address:  %p\n", iterator);
-        printf("data:     %s\n", iterator->str);
+        if (iterator->type == SYMBOL)
+            printf("data:     %c\n", (char) iterator->value);
+        else
+            printf("data:     %d\n", iterator->value);
         printf("next:     %p\n", iterator->next);
         printf("----------------------\n\n");
 
@@ -243,7 +246,10 @@ void printStack(Stack *stack) {
     int x;
     printf("------Stack Top------\n");
     for (x = stack->size - 1; x >= 0; x--) {
-        printf("%d\n", stack->data[x]->str);
+        if (stack->data[x]->type == SYMBOL)
+            printf("%c\n", (char) stack->data[x]->value);
+        else
+            printf("%d\n", stack->data[x]->value);
     }
     printf("-----Stack Bottom-----\n\n");
 }
@@ -264,17 +270,17 @@ Expression* shunt(Expression *e) {
     while (o1 != NULL) {
         // If a number:
         if (o1->type == INTEGER)
-            addMath(out, o1->type, o1->assoc, o1->priority, o1->str);
+            addMath(out, o1->type, o1->assoc, o1->priority, o1->value);
 
         // If a left parenthesis:
-        else if (strcmp(o1->str, "(") == 0)
+        else if (o1->type == SYMBOL && (char) o1->value == '(')
             push(operator, *o1);
         
         // If a right parenthesis:
-        else if (strcmp(o1->str, ")") == 0) {
-            while (strcmp(peek(operator)->str, "(") != 0) {
+        else if (o1->type == SYMBOL && (char) o1->value == ')') {
+            while ((char) peek(operator)->value != '(') {
                 Math *m = pop(operator);
-                addMath(out, m->type, m->assoc, m->priority, m->str);
+                addMath(out, m->type, m->assoc, m->priority, m->value);
             }
             pop(operator);  // Discard "(".
         }
@@ -284,12 +290,12 @@ Expression* shunt(Expression *e) {
             while (!isEmpty(operator)) {
                 Math *o2 = peek(operator);
 
-                if (strcmp(o2->str, "(") != 0 &&
+                if ((char) o2->value != '(' &&
                     (o2->priority < o1->priority ||
                         (o1->priority == o2->priority && o1->assoc == LEFT)))
                 {
                     Math *m = pop(operator);
-                    addMath(out, m->type, m->assoc, m->priority, m->str);
+                    addMath(out, m->type, m->assoc, m->priority, m->value);
                 }
                 else
                     break;
@@ -301,7 +307,7 @@ Expression* shunt(Expression *e) {
 
     while (!isEmpty(operator)) {
         Math *m = pop(operator);
-        addMath(out, m->type, m->assoc, m->priority, m->str);
+        addMath(out, m->type, m->assoc, m->priority, m->value);
     }
 
     freeExpression(e);
@@ -312,8 +318,28 @@ Expression* shunt(Expression *e) {
 /**
  * Evaluates postfix expression 'e'.  
  */
-int eval(Expression *e) {
+float eval(Expression *e) {
+    float result = 0;
 
+    Math *next = getNextMath(e);
+    Stack *working = newStack(e->size);
+
+    while (next != NULL) {
+        if (next->type == SYMBOL && (char) next->value == '+') {
+            result += pop(working)->value + pop(working)->value;
+            push(working, (Math) {INTEGER, LEFT, 0, result});
+        }
+        else if (next->type == SYMBOL && (char) next->value == '*') {
+            result += pop(working)->value * pop(working)->value;
+            push(working, (Math) {INTEGER, LEFT, 0, result});
+        }
+        else if (next->type == INTEGER)
+            push(working, *next);
+
+        next = getNextMath(e);
+    }
+
+    return result;
 }
 /** EXPRESSION HANDLING */
 
@@ -384,7 +410,7 @@ ParserInfo r_parseExpr(Expression *e) {
         return info;
 
     if (strcmp(t->lexeme, "+") == 0|| strcmp(t->lexeme, "-") == 0) {
-        addMath(e, SYMBOL, LEFT, 4, t->lexeme);
+        addMath(e, SYMBOL, LEFT, 4, t->lexeme[0]);
         getNextToken();
 
         info = parseTerm(e);
@@ -426,7 +452,7 @@ ParserInfo r_parseTerm(Expression *e) {
         return info;
 
     if (strcmp(t->lexeme, "*") == 0 || strcmp(t->lexeme, "/") == 0) {
-        addMath(e, SYMBOL, LEFT, 3, t->lexeme);
+        addMath(e, SYMBOL, LEFT, 3, t->lexeme[0]);
         getNextToken();
 
         info = parseFactor(e);
@@ -452,7 +478,7 @@ ParserInfo parseFactor(Expression *e) {
     ParserInfo info = {.error = NONE};
 
     if (strcmp(peekNextToken()->lexeme, "(") == 0) {
-        addMath(e, SYMBOL, LEFT, 1, "(");
+        addMath(e, SYMBOL, LEFT, 1, '(');
         
         getNextToken();
         info = parseExpr(e);
@@ -461,20 +487,20 @@ ParserInfo parseFactor(Expression *e) {
 
         checkFor(PAREN_CLOSE, &info, CONSUME);
         if (info.error == NONE)
-            addMath(e, SYMBOL, LEFT, 1, ")");
+            addMath(e, SYMBOL, LEFT, 1, ')');
     }
     else if (strcmp(peekNextToken()->lexeme, "-") == 0) {
-        addMath(e, SYMBOL, RIGHT, 2, "-");  // Unary minus.
+        addMath(e, SYMBOL, RIGHT, 2, '-');  // Unary minus.
         
         getNextToken();
         checkFor(OPERAND, &info, CONSUME);
         if (info.error == NONE)
-            addMath(e, INTEGER, LEFT, 0, info.token->lexeme);
+            addMath(e, INTEGER, LEFT, 0, atoi(info.token->lexeme));
     }
     else {
         checkFor(OPERAND, &info, CONSUME);
         if (info.error == NONE)
-            addMath(e, INTEGER, LEFT, 0, info.token->lexeme);
+            addMath(e, INTEGER, LEFT, 0, atoi(info.token->lexeme));
     }
     return info;
 }
@@ -502,7 +528,7 @@ void parse(char *str) {
     }
 
     Expression *postfix = shunt(expr);  // Infix -> Postfix (RPN)
-    printExpr(postfix);
-    int result = eval(expr);
+    //printExpr(postfix);
+    printf("= %0g\n", eval(postfix));
     stopLexer();
 }
