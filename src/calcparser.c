@@ -116,7 +116,10 @@ void addMath(Expression *e, TokenType t, Associative a, int priority, char *str)
 Math* getNextMath(Expression *e) {
     Math *m;
 
-    if (e->cur == e->start)
+    if (e->cur == NULL)
+        return NULL;
+
+    else if (e->cur == e->start)
         m = e->start;
     else
         m = e->cur;
@@ -141,7 +144,7 @@ void printExpr(Expression *e) {
     while (1) {
         printf("----------------------\n");
         printf("address:  %p\n", iterator);
-        printf("data:     %d\n", iterator->str);
+        printf("data:     %s\n", iterator->str);
         printf("next:     %p\n", iterator->next);
         printf("----------------------\n\n");
 
@@ -244,12 +247,12 @@ void printStack(Stack *stack) {
     }
     printf("-----Stack Bottom-----\n\n");
 }
-/** EXPRESSION HANDLING */
 
 
 /**
  * Returns a postfix conversion of infix expression 'e'.
  * URL: https://en.wikipedia.org/wiki/Shunting_yard_algorithm
+ * URL: https://raj457036.github.io/Simple-Tools/prefixAndPostfixConvertor.html
  * 
  * The recursive descent parser ensured balanced parentheses.
  */
@@ -269,10 +272,11 @@ Expression* shunt(Expression *e) {
         
         // If a right parenthesis:
         else if (strcmp(o1->str, ")") == 0) {
-            while (!strcmp(peek(operator)->str, "(")) {
+            while (strcmp(peek(operator)->str, "(") != 0) {
                 Math *m = pop(operator);
                 addMath(out, m->type, m->assoc, m->priority, m->str);
             }
+            pop(operator);  // Discard "(".
         }
 
         // If an operator:
@@ -289,8 +293,8 @@ Expression* shunt(Expression *e) {
                 }
                 else
                     break;
-                push(operator, *o1);
             }
+            push(operator, *o1);
         }
         o1 = getNextMath(e);
     }
@@ -311,6 +315,7 @@ Expression* shunt(Expression *e) {
 int eval(Expression *e) {
 
 }
+/** EXPRESSION HANDLING */
 
 
 /** START PROTOTYPES */
@@ -496,7 +501,8 @@ void parse(char *str) {
         return;
     }
 
-    shunt(expr);  // Infix -> Postfix (RPN)
+    Expression *postfix = shunt(expr);  // Infix -> Postfix (RPN)
+    printExpr(postfix);
     int result = eval(expr);
     stopLexer();
 }
