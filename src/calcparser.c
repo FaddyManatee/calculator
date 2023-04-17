@@ -38,6 +38,11 @@ typedef struct Stack {
 Stack* newStack(int maxSize) {
     Stack *stack = (Stack *) malloc(sizeof(Stack));
     stack->data = (Math **) calloc(maxSize, sizeof(Math *));
+
+    int x;
+    for (x = 0; x < maxSize; x++)
+        stack->data[x] = (Math *) calloc(1, sizeof(Math));
+
     stack->top = stack->data[0];
     stack->max = maxSize;
     stack->size = 0;
@@ -50,6 +55,10 @@ Stack* newStack(int maxSize) {
  * Frees all memory dynamically allocated to the stack. 
  */
 void freeStack(Stack *stack) {
+    int x;
+    for (x = 0; x < stack->max; x++)
+        free(stack->data[x]);
+    
     free(stack->data);
     free(stack);
 }
@@ -133,16 +142,22 @@ void printStack(Stack *stack) {
 
 
 typedef struct Expression {
-    Math *expr[128];  // Static for now.
-    Math *end;
-    int size;
+    Math **expr;  // Static for now.
+    Math **end;
+    int    size;
 } Expression;
 
 
-Expression *newExpression() {
+Expression *newExpression(int size) {
     Expression *e = (Expression *) malloc(sizeof(Expression));
-    e->end = e->expr[0];
-    e->size = 0;
+    e->expr = (Math **) malloc(sizeof(Math *) * size);
+
+    int x;
+    for (x = 0; x < size; x++)
+        e->expr[x] = (Math *) calloc(1, sizeof(Math));
+
+    e->end = e->expr;
+    e->size = size;
 
     return e;
 }
@@ -152,18 +167,19 @@ void freeExpression(Expression *e) {
     int x;
     for (x = 0; x < e->size; x++)
         free(e->expr[x]);
+
+    free(e->expr);
     free(e);
 }
 
 
 void addMath(Expression *e, TokenType type, Associative a, int priority, char *str) {
-    Math *new = (Math *) malloc(sizeof(Math));
+    Math *new = *(e->end++);
     new->type = type;
     new->assoc = a;
     new->priority = priority;
     new->str = str;
-    e->expr[e->size++] = new; 
-    e->end++;
+    e->size++;
 }
 /** EXPRESSION HANDLING */
 
@@ -174,13 +190,13 @@ void addMath(Expression *e, TokenType type, Associative a, int priority, char *s
  * 
  * The recursive descent parser ensured balanced parentheses.
  */
-void shuntingYard(Expression *e) {
+void shunt(Expression *e) {
+    Math *output[e->size];
     Stack *operator = newStack(e->size);
-    Math **output = (Math **) calloc(e->size, sizeof(Math *));
     int curExpr = 0;
     int curOut = 0;
 
-    while ((e->expr[curExpr])->str != NULL) {
+    while (e->expr[curExpr] != NULL) {
         Math *m = e->expr[curExpr];
 
         // A left parenthesis.
@@ -225,7 +241,6 @@ void shuntingYard(Expression *e) {
 
     memcpy(e->expr, output, sizeof(Math **) * e->size);
     freeStack(operator);
-    free(output);
 }
 
 
@@ -238,7 +253,6 @@ int eval(Expression *e) {
 
 
 /** START PROTOTYPES */
-void parse(char *str);
 ParserInfo parseExpr();  // Start symbol
 ParserInfo r_parseExpr(Expression *e);
 ParserInfo parseTerm(Expression *e);
@@ -406,7 +420,7 @@ void parse(char *str) {
         return;
     }
 
-    Expression *expr = newExpression();
+    Expression *expr = newExpression(128);
     ParserInfo info = parseExpr(expr);
 
     // Check for any extra/illegal parentheses outside of an expression.
@@ -421,7 +435,7 @@ void parse(char *str) {
         return;
     }
 
-    shuntingYard(expr);  // Infix -> Postfix (RPN)
+    shunt(expr);  // Infix -> Postfix (RPN)
     int result = eval(expr);
     stopLexer();
 }
