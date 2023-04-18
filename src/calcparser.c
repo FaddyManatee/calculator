@@ -176,7 +176,7 @@ Stack* newStack(int maxSize) {
 
     int x;
     for (x = 0; x < maxSize; x++)
-        stack->data[x] = (Math *) calloc(1, sizeof(Math));
+        stack->data[x] = (Math *) malloc(sizeof(Math));
 
     stack->top = stack->data[0];
     stack->max = maxSize;
@@ -188,7 +188,7 @@ Stack* newStack(int maxSize) {
 
 void freeStack(Stack *stack) {
     int x;
-    for (x = 0; x < stack->max; x++)
+    for (x = 0; x < stack->size; x++)
         free(stack->data[x]);
 
     free(stack->data);
@@ -310,6 +310,7 @@ Expression* shunt(Expression *e) {
         addMath(out, m->type, m->assoc, m->priority, m->value);
     }
 
+    freeStack(operator);
     freeExpression(e);
     return out;
 }
@@ -318,28 +319,65 @@ Expression* shunt(Expression *e) {
 /**
  * Evaluates postfix expression 'e'.  
  */
-float eval(Expression *e) {
-    float result = 0;
-
-    Math *next = getNextMath(e);
+int eval(Expression *e) {
     Stack *working = newStack(e->size);
+    Math *next = getNextMath(e);
 
     while (next != NULL) {
+        int result;
+
+        // Addition.
         if (next->type == SYMBOL && (char) next->value == '+') {
-            result += pop(working)->value + pop(working)->value;
+            result = pop(working)->value + pop(working)->value;
             push(working, (Math) {INTEGER, LEFT, 0, result});
         }
+
+        // Subtraction.
+        else if (next->type == SYMBOL &&
+                 next->priority == 4 &&
+                 (char) next->value == '-') 
+        {
+            result = (pop(working)->value - pop(working)->value);
+            push(working, (Math) {INTEGER, LEFT, 0, -result});  // Negate because stack.
+        }
+
+        // Unary minus.
+        else if (next->type == SYMBOL &&
+                 next->priority == 2 &&
+                 (char) next->value == '-') 
+        {
+            result = pop(working)->value;
+            push(working, (Math) {INTEGER, LEFT, 0, -result});
+        }
+
+        // Multiplication.
         else if (next->type == SYMBOL && (char) next->value == '*') {
-            result += pop(working)->value * pop(working)->value;
+            result = pop(working)->value * pop(working)->value;
             push(working, (Math) {INTEGER, LEFT, 0, result});
         }
+
+        // Integer division.
+        else if (next->type == SYMBOL && (char) next->value == '/') {
+            int pop1 = pop(working)->value;
+            int pop2 = pop(working)->value;
+            if (pop1 == 0) {
+                printf("Error: Divided by zero.\n");
+                //freeStack(working);
+                return 0;
+            }
+            push(working, (Math) {INTEGER, LEFT, 0, pop2 / pop1});
+        }
+
+        // Integer.
         else if (next->type == INTEGER)
             push(working, *next);
 
         next = getNextMath(e);
     }
 
-    return result;
+    int eval = pop(working)->value;
+    //freeStack(working); 
+    return eval;
 }
 /** EXPRESSION HANDLING */
 
@@ -529,6 +567,7 @@ void parse(char *str) {
 
     Expression *postfix = shunt(expr);  // Infix -> Postfix (RPN)
     //printExpr(postfix);
-    printf("= %0g\n", eval(postfix));
+    printf("= %d\n", eval(postfix));
+    freeExpression(postfix);
     stopLexer();
 }
